@@ -1,0 +1,6 @@
+# 运行时唯一必需的外部依赖：密码 SSH。
+# 其余功能（HTTP 服务、SQLite、SMTP、调度、图表）全部使用 Python 标准库。
+paramiko>=2.9
+
+# 可选：装了会用 AES 的 Fernet 加密落盘，没装则自动退化为 HMAC-SHA256 流加密。
+# cryptography>=3.4

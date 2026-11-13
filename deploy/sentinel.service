@@ -1,0 +1,22 @@
+[Unit]
+Description=Sentinel Ops - 轻量服务器巡检与告警
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sentinel
+ExecStart=/usr/bin/python3 /opt/sentinel/run.py --host 127.0.0.1 --port 8088 --no-demo
+Restart=always
+RestartSec=3
+User=sentinel
+Group=sentinel
+
+# 稍微收紧权限；数据目录需要可写
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/sentinel/data
+
+[Install]
+WantedBy=multi-user.target

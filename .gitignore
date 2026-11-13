@@ -1,0 +1,26 @@
+# 运行期数据：数据库、密钥、日志
+data/
+tests/_tmp/
+tests/_tmp*/
+
+# 本地排查时留下的临时目录 / ACL 修复备份（跟项目无关）
+_tmp_*/
+.acl-repair/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 编辑器
+.vscode/
+.idea/
+
+# 生成的邮件预览
+tests/shots/mail-*.html
+
+# 系统
+.DS_Store
+Thumbs.db
