@@ -23,7 +23,7 @@
 - **磁盘写满预测**：对每个挂载点做最近 12 小时的最小二乘拟合，算出 GB/天 与"还有多久到阈值"，
   带 R² 置信度；增长太慢自动不预测，避免噪声。
 - **告警**：CPU/内存连续 N 个周期超阈值、磁盘超阈值、inode 超阈值、预测即将写满、SSH 失联、恢复通知。
-  同一问题有冷却时间，不会刷屏；每小时有邮件总量上限。
+  同一问题有冷却时间，不会刷屏；可设每小时上限、每天上限与相邻两封的最小间隔。
 - **AI 研判**（可选）：只在命中规则时调用一次，让模型判断"要不要紧、可能是什么原因、先做哪几步"，
   结果附在邮件里；模型挂了不影响告警送达。
 - **邮件**：SSL / STARTTLS / 明文三种 SMTP，HTML + 纯文本双份，支持多收件人。
@@ -115,6 +115,9 @@ OpenCode Go 提供 OpenAI 兼容端点，模型 ID 是 `deepseek-v4.1-flash` 或
 - **失联**：连续 `offline_after` 次（默认 2 次）SSH 失败才报，避免网络抖动误报。
 - **冷却**：同一 `服务器 + 问题` 在 `cooldown_minutes`（默认 360 分钟）内只发一封；
   严重级别升高会立刻再发一封。
+- **限速**：`max_emails_per_day`（默认 2）按自然日计数、0 点重置，`min_email_interval_minutes`
+  （默认 60）控制相邻两封邮件的最小间隔；只统计实际发送成功的邮件，0 = 不限制。
+  测试邮件按钮与定期汇总不占额度。
 - **恢复**：指标回落后发一封"已恢复"，并关闭该告警。
 
 预测是**趋势外推**，不是承诺：突发写入（比如半夜跑个备份）会让实际时间大幅提前。
@@ -171,7 +174,7 @@ python run.py --host 0.0.0.0         # 允许远程访问（记得设 Basic 认�
 python run.py --no-demo              # 不带演示服务器
 python run.py --log-level DEBUG      # 排查采集问题
 
-python tests/test_units.py           # 59 项单元测试
+python tests/test_units.py           # 74 项单元测试（含邮件限速）
 python tests/e2e.py                  # 端到端：假 SSH + 假 SMTP + 假模型，28 项
 python tests/test_summary.py         # 按天/按周汇总模式，16 项
 python tests/test_restart.py         # 重启后配置/密钥还在，6 项

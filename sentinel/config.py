@@ -43,6 +43,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "notify_recovery": True,
         # 每小时的邮件上限，防止配置错误把自己淹没
         "max_emails_per_hour": 20,
+        # 每天最多发几封（自然日 0 点重置，0 = 不限制）
+        "max_emails_per_day": 2,
+        # 相邻两封邮件的最小间隔（分钟，0 = 不限制）
+        "min_email_interval_minutes": 60,
     },
     "email": {
         "enabled": False,
@@ -186,6 +190,8 @@ def normalize(settings: Dict[str, Any]) -> Dict[str, Any]:
     a["offline_after"] = max(1, min(100, int(a["offline_after"])))
     a["cooldown_minutes"] = max(0, min(10080, int(a["cooldown_minutes"])))
     a["max_emails_per_hour"] = max(1, min(500, int(a["max_emails_per_hour"])))
+    a["max_emails_per_day"] = max(0, min(500, int(a["max_emails_per_day"])))
+    a["min_email_interval_minutes"] = max(0, min(1440, int(a["min_email_interval_minutes"])))
 
     e = merged["email"]
     if e["security"] not in ("ssl", "starttls", "none"):

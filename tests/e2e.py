@@ -117,7 +117,8 @@ def main():
         print("\n配置 SMTP 与模型…")
         code, data = request("/api/settings", "PUT", {
             "collect": {"interval_sec": 30, "connect_timeout_sec": 5, "command_timeout_sec": 15},
-            "alerts": {"disk_pct": 85, "cooldown_minutes": 0},
+            "alerts": {"disk_pct": 85, "cooldown_minutes": 0,
+                       "max_emails_per_day": 0, "min_email_interval_minutes": 0},
             "email": {
                 "enabled": True, "host": "127.0.0.1", "port": 2525, "security": "none",
                 "username": "", "password": "", "from_addr": "sentinel@test.local",

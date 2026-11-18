@@ -219,6 +219,34 @@ class Monitor:
         cooldown = int(cfg.get("cooldown_minutes", 360)) * 60
         return now - int(state.get("last", 0)) >= cooldown
 
+    # ------------------------------------------------------------------ 邮件限速
+    def _email_quota_block(self, cfg: Dict[str, Any], now: int) -> str:
+        """每天最多 N 封 + 相邻两封最小间隔；返回拦截原因，空串 = 放行。
+
+        计数只认“实际发送成功”的邮件（一封里打包多条异常算 1 封），
+        存在 state 表里，重启不丢；自然日 0 点重置。
+        """
+        quota = self.store.get_json("email_quota", {}) or {}
+        max_per_day = int(cfg.get("max_emails_per_day") or 0)
+        if max_per_day > 0:
+            today = time.strftime("%Y-%m-%d", time.localtime(now))
+            if str(quota.get("day") or "") == today and int(quota.get("count") or 0) >= max_per_day:
+                return f"已达每日 {max_per_day} 封上限"
+        interval = int(cfg.get("min_email_interval_minutes") or 0)
+        if interval > 0 and quota.get("last_ts") and now - int(quota["last_ts"]) < interval * 60:
+            return f"距上一封邮件不足 {interval} 分钟"
+        return ""
+
+    def _record_email_sent(self, now: int) -> None:
+        quota = self.store.get_json("email_quota", {}) or {}
+        today = time.strftime("%Y-%m-%d", time.localtime(now))
+        if str(quota.get("day") or "") != today:
+            quota["day"] = today
+            quota["count"] = 0
+        quota["count"] = int(quota.get("count") or 0) + 1
+        quota["last_ts"] = now
+        self.store.set_json("email_quota", quota)
+
     # ------------------------------------------------------------------ 分发
     def _dispatch(
         self,
@@ -275,21 +303,26 @@ class Monitor:
             notify_error = "邮件通知未启用"
         elif is_demo:
             notify_error = "演示服务器不发信"
-        elif self.store.count_emails_since(now - 3600) >= int(cfg["max_emails_per_hour"]):
-            notify_error = f"已达每小时 {cfg['max_emails_per_hour']} 封上限"
         else:
-            try:
-                mail = notifier.build_alert_email(
-                    settings, server, metric, emitted, predictions, analysis, diagnosis
-                )
-                notifier.send(settings, mail["subject"], mail["text"], mail["html"])
-                notified = True
-            except notifier.NotifyError as exc:
-                notify_error = str(exc)
-                log.warning("告警邮件发送失败 %s: %s", server.get("name"), exc)
-            except Exception as exc:
-                notify_error = f"{exc.__class__.__name__}: {exc}"
-                log.warning("告警邮件异常 %s: %s", server.get("name"), exc)
+            quota_error = self._email_quota_block(cfg, now)
+            if quota_error:
+                notify_error = quota_error
+            elif self.store.count_emails_since(now - 3600) >= int(cfg["max_emails_per_hour"]):
+                notify_error = f"已达每小时 {cfg['max_emails_per_hour']} 封上限"
+            else:
+                try:
+                    mail = notifier.build_alert_email(
+                        settings, server, metric, emitted, predictions, analysis, diagnosis
+                    )
+                    notifier.send(settings, mail["subject"], mail["text"], mail["html"])
+                    notified = True
+                    self._record_email_sent(now)
+                except notifier.NotifyError as exc:
+                    notify_error = str(exc)
+                    log.warning("告警邮件发送失败 %s: %s", server.get("name"), exc)
+                except Exception as exc:
+                    notify_error = f"{exc.__class__.__name__}: {exc}"
+                    log.warning("告警邮件异常 %s: %s", server.get("name"), exc)
 
         llm_payload = analysis or ({"error": llm_error} if llm_error else None)
         alerts: List[Dict[str, Any]] = []
@@ -356,13 +389,18 @@ class Monitor:
         elif server.get("kind") == "demo":
             notify_error = "演示服务器不发信"
         else:
-            try:
-                mail = notifier.build_recovery_email(server, metric, resolved)
-                notifier.send(settings, mail["subject"], mail["text"], mail["html"])
-                notified = True
-            except Exception as exc:
-                notify_error = str(exc)
-                log.warning("恢复邮件发送失败 %s: %s", server.get("name"), exc)
+            quota_error = self._email_quota_block(cfg, now)
+            if quota_error:
+                notify_error = quota_error
+            else:
+                try:
+                    mail = notifier.build_recovery_email(server, metric, resolved)
+                    notifier.send(settings, mail["subject"], mail["text"], mail["html"])
+                    notified = True
+                    self._record_email_sent(now)
+                except Exception as exc:
+                    notify_error = str(exc)
+                    log.warning("恢复邮件发送失败 %s: %s", server.get("name"), exc)
 
         for item in resolved:
             self.store.insert_alert(

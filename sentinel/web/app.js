@@ -777,6 +777,8 @@ function renderSettings() {
         ${inputField('失联判定（次）', 'alerts.offline_after', s.alerts.offline_after, {})}
         ${inputField('告警冷却（分钟）', 'alerts.cooldown_minutes', s.alerts.cooldown_minutes, { hint: '同一问题在此期间不重复发信' })}
         ${inputField('每小时邮件上限', 'alerts.max_emails_per_hour', s.alerts.max_emails_per_hour, {})}
+        ${inputField('每天邮件上限', 'alerts.max_emails_per_day', s.alerts.max_emails_per_day, { hint: '自然日 0 点重置，0 = 不限制' })}
+        ${inputField('邮件最小间隔（分钟）', 'alerts.min_email_interval_minutes', s.alerts.min_email_interval_minutes, { hint: '相邻两封邮件至少隔多久，0 = 不限制' })}
         ${switchRow('恢复时通知', 'alerts.notify_recovery', s.alerts.notify_recovery, '指标回落后发一封恢复邮件', true)}
       </div>
     </div>

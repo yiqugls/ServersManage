@@ -21,6 +21,9 @@ venv/
 # 生成的邮件预览
 tests/shots/mail-*.html
 
+# 部署打包产物
+*.tar.gz
+
 # 系统
 .DS_Store
 Thumbs.db

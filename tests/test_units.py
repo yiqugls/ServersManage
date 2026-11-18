@@ -305,6 +305,88 @@ def test_email():
     check("无告警时给出安静提示", "没有告警" in weekly["html"])
 
 
+def test_email_quota():
+    print("\n[邮件限速]")
+    from sentinel import analyzer
+
+    class QuotaStore:
+        def __init__(self):
+            self.kv = {}
+            self.alert_rows = []
+
+        def get_json(self, key, default=None):
+            return self.kv.get(key, default)
+
+        def set_json(self, key, value):
+            self.kv[key] = value
+
+        def list_servers(self):
+            return [{"id": 1}]
+
+        def insert_alert(self, alert):
+            self.alert_rows.append(dict(alert))
+            return len(self.alert_rows)
+
+        def count_emails_since(self, since_ts):
+            return sum(1 for a in self.alert_rows if a.get("notified") and a.get("ts", 0) >= since_ts)
+
+    def one(kind, fp, title):
+        return [{"kind": kind, "fingerprint": fp, "severity": "critical",
+                 "title": title, "detail": "x", "value": 1.0}]
+
+    store = QuotaStore()
+    settings = config.normalize({
+        "alerts": {"cooldown_minutes": 0, "max_emails_per_day": 2, "min_email_interval_minutes": 60},
+        "email": {"enabled": True},
+    })
+    monitor = analyzer.Monitor(store, lambda: settings)
+    server = {"id": 1, "name": "quota", "host": "1.2.3.4", "port": 22, "kind": "ssh"}
+    metric = {"ts": int(time.time()), "cpu_pct": 95.0, "mem_pct": 50.0, "disks": []}
+
+    sent = []
+    real_send = analyzer.notifier.send
+    analyzer.notifier.send = lambda s, subj, text, html: sent.append(subj)
+    try:
+        a1, _ = monitor._dispatch(server, metric, one("cpu", "cpu", "CPU 高"), [], settings)
+        check("第一封邮件放行", len(sent) == 1 and a1[0]["notified"] is True,
+              (len(sent), a1[0].get("notify_error")))
+
+        a2, _ = monitor._dispatch(server, metric, one("mem", "mem", "内存高"), [], settings)
+        check("间隔不足被拦截", len(sent) == 1 and "不足 60 分钟" in (a2[0].get("notify_error") or ""),
+              a2[0].get("notify_error"))
+
+        # 模拟过了 1 小时：第 2 封放行，日计数到 2
+        store.kv["email_quota"]["last_ts"] = int(time.time()) - 3601
+        a3, _ = monitor._dispatch(server, metric, one("disk", "disk:/", "磁盘高"), [], settings)
+        check("过了间隔放行第 2 封", len(sent) == 2 and a3[0]["notified"] is True,
+              (len(sent), a3[0].get("notify_error")))
+        check("日计数达到 2", store.kv["email_quota"]["count"] == 2, store.kv["email_quota"])
+
+        a4, _ = monitor._dispatch(server, metric, one("inode", "inode:/", "inode 高"), [], settings)
+        check("超过每日上限被拦截", len(sent) == 2 and "已达每日 2 封上限" in (a4[0].get("notify_error") or ""),
+              a4[0].get("notify_error"))
+
+        # 模拟第二天：额度按自然日重置（时间也前进了 1 小时以上）
+        store.kv["email_quota"].update({"day": "2000-01-01", "last_ts": int(time.time()) - 3700})
+        a5, _ = monitor._dispatch(server, metric, one("offline", "offline", "失联"), [], settings)
+        check("次日额度重置", len(sent) == 3 and a5[0]["notified"] is True,
+              (len(sent), a5[0].get("notify_error")))
+
+        # 恢复邮件同样受限速约束
+        monitor._notify_recovery(server, metric,
+                                 [{"key": "1:cpu", "fingerprint": "cpu", "title": "CPU 高"}], settings)
+        check("恢复邮件也受间隔限制", len(sent) == 3, len(sent))
+
+        # 0 = 不限制
+        settings["alerts"]["max_emails_per_day"] = 0
+        settings["alerts"]["min_email_interval_minutes"] = 0
+        a6, _ = monitor._dispatch(server, metric, one("cpu2", "cpu2", "又高了"), [], settings)
+        check("0 表示不限制", len(sent) == 4 and a6[0]["notified"] is True,
+              (len(sent), a6[0].get("notify_error")))
+    finally:
+        analyzer.notifier.send = real_send
+
+
 def main():
     test_collector()
     test_predictor()
@@ -313,6 +395,7 @@ def main():
     test_secrets()
     test_llm_parse()
     test_email()
+    test_email_quota()
     print(f"\n结果：{passed} 通过，{failed} 失败")
     return 0 if failed == 0 else 1
 
